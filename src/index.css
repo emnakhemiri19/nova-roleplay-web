@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Optional: global defaults for Nova Role Play */
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-zinc-50 text-zinc-900 antialiased;
+  }
+
+  /* If you want a dark theme base by default, use this instead:
+  body {
+    @apply bg-zinc-950 text-zinc-100 antialiased;
+  }
+  */
+
+  a {
+    @apply text-inherit;
+  }
+}
+
+@layer components {
+  .container-nrp {
+    @apply mx-auto max-w-5xl px-6;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center rounded-md px-3 py-2 text-sm font-medium;
+  }
+
+  .btn-primary {
+    @apply btn bg-indigo-600 text-white hover:bg-indigo-500;
+  }
+
+  .btn-dark {
+    @apply btn bg-zinc-900 text-white hover:bg-zinc-800;
+  }
+}
