@@ -11,7 +11,7 @@ import Admin from "./app/pages/Admin";
 
 export default function App() {
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen pt-16">
       <Navbar />
 
       <Routes>

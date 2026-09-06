@@ -2,7 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Optional: global defaults for Nova Role Play */
 @layer base {
   html,
   body {
@@ -10,34 +9,65 @@
   }
 
   body {
-    @apply bg-zinc-50 text-zinc-900 antialiased;
-  }
-
-  /* If you want a dark theme base by default, use this instead:
-  body {
     @apply bg-zinc-950 text-zinc-100 antialiased;
   }
-  */
 
   a {
     @apply text-inherit;
   }
+
+  ::selection {
+    @apply bg-indigo-500/30 text-white;
+  }
 }
 
 @layer components {
+  /* Layout */
   .container-nrp {
     @apply mx-auto max-w-5xl px-6;
   }
 
+  /* Buttons */
   .btn {
-    @apply inline-flex items-center justify-center rounded-md px-3 py-2 text-sm font-medium;
+    @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:ring-offset-2 focus:ring-offset-zinc-950 disabled:opacity-50 disabled:pointer-events-none;
   }
 
   .btn-primary {
-    @apply btn bg-indigo-600 text-white hover:bg-indigo-500;
+    @apply btn bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-500/20;
   }
 
-  .btn-dark {
-    @apply btn bg-zinc-900 text-white hover:bg-zinc-800;
+  .btn-secondary {
+    @apply btn bg-zinc-800 text-zinc-100 hover:bg-zinc-700 border border-zinc-700;
+  }
+
+  .btn-ghost {
+    @apply btn bg-transparent text-zinc-300 hover:bg-zinc-800 hover:text-white;
+  }
+
+  .btn-danger {
+    @apply btn bg-red-600/90 text-white hover:bg-red-500;
+  }
+
+  /* Cards */
+  .card {
+    @apply rounded-2xl border border-zinc-800 bg-zinc-900/80 backdrop-blur-sm shadow-xl shadow-black/20;
+  }
+
+  .card-hover {
+    @apply card transition-all duration-200 hover:border-zinc-700 hover:bg-zinc-900;
+  }
+
+  /* Inputs */
+  .input {
+    @apply w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30;
+  }
+
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-zinc-300;
+  }
+
+  /* Badges */
+  .badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
   }
 }
