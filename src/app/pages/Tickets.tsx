@@ -1,20 +1,47 @@
 import { useState, useRef, useEffect } from "react";
 import { useAuth } from "../auth/AuthContext";
-import { db, storage } from "../lib/firebase";
-import {
-  collection,
-  addDoc,
-  query,
-  where,
-  orderBy,
-  onSnapshot,
-  serverTimestamp,
-  doc,
-} from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { db } from "../lib/firebase";
+import { api } from "../api";
 
-type TicketCategory = "donation" | "report" | "ban_appeal" | "support";
-type TicketStatus = "open" | "in_progress" | "closed";
+import {
+  addDoc,
+  collection,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  where,
+} from "firebase/firestore";
+
+import {
+  ArrowLeft,
+  ArrowRight,
+  Ban,
+  CheckCircle2,
+  ChevronRight,
+  CircleHelp,
+  Gem,
+  ImagePlus,
+  LockKeyhole,
+  MessageSquare,
+  Search,
+  Send,
+  ShieldAlert,
+  Ticket as TicketIcon,
+  Wrench,
+  X,
+} from "lucide-react";
+
+type TicketCategory =
+  | "donation"
+  | "report"
+  | "ban_appeal"
+  | "support";
+
+type TicketStatus =
+  | "open"
+  | "in_progress"
+  | "closed";
 
 interface Ticket {
   id: string;
@@ -49,94 +76,202 @@ interface DiscordMember {
   avatar: string | null;
 }
 
+const API_URL = "http://localhost:4000";
+
 const CATEGORIES = [
   {
     id: "donation" as TicketCategory,
     label: "Donation",
-    description: "Questions about donations, rewards, or packages",
-    icon: "💎",
-    color: "border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/15 text-emerald-300",
-    badge: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+    description:
+      "Questions about donations, rewards or packages.",
+    icon: Gem,
+    color:
+      "border-emerald-500/20 bg-emerald-500/[0.04] hover:border-emerald-500/40 hover:bg-emerald-500/[0.08]",
+    iconStyle:
+      "bg-emerald-500/10 text-emerald-400",
+    badge:
+      "border-emerald-500/20 bg-emerald-500/10 text-emerald-300",
   },
+
   {
     id: "report" as TicketCategory,
-    label: "Report",
-    description: "Report a player or rule violation",
-    icon: "⚠️",
-    color: "border-red-500/30 bg-red-500/10 hover:bg-red-500/15 text-red-300",
-    badge: "bg-red-500/15 text-red-300 border-red-500/30",
+    label: "Player Report",
+    description:
+      "Report a player or a rule violation.",
+    icon: ShieldAlert,
+    color:
+      "border-red-500/20 bg-red-500/[0.04] hover:border-red-500/40 hover:bg-red-500/[0.08]",
+    iconStyle:
+      "bg-red-500/10 text-red-400",
+    badge:
+      "border-red-500/20 bg-red-500/10 text-red-300",
   },
+
   {
     id: "ban_appeal" as TicketCategory,
     label: "Ban Appeal",
-    description: "Appeal a ban or punishment",
-    icon: "🔓",
-    color: "border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/15 text-amber-300",
-    badge: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+    description:
+      "Request a review of your ban or punishment.",
+    icon: Ban,
+    color:
+      "border-amber-500/20 bg-amber-500/[0.04] hover:border-amber-500/40 hover:bg-amber-500/[0.08]",
+    iconStyle:
+      "bg-amber-500/10 text-amber-400",
+    badge:
+      "border-amber-500/20 bg-amber-500/10 text-amber-300",
   },
+
   {
     id: "support" as TicketCategory,
-    label: "Support Team",
-    description: "General help, bugs, or other issues",
-    icon: "🛠️",
-    color: "border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/15 text-indigo-300",
-    badge: "bg-indigo-500/15 text-indigo-300 border-indigo-500/30",
+    label: "General Support",
+    description:
+      "General help, bugs or other issues.",
+    icon: Wrench,
+    color:
+      "border-indigo-500/20 bg-indigo-500/[0.04] hover:border-indigo-500/40 hover:bg-indigo-500/[0.08]",
+    iconStyle:
+      "bg-indigo-500/10 text-indigo-400",
+    badge:
+      "border-indigo-500/20 bg-indigo-500/10 text-indigo-300",
   },
 ];
 
 const STATUS_STYLES: Record<TicketStatus, string> = {
-  open: "bg-blue-500/15 text-blue-300 border border-blue-500/30",
-  in_progress: "bg-amber-500/15 text-amber-300 border border-amber-500/30",
-  closed: "bg-zinc-500/15 text-zinc-400 border border-zinc-500/30",
+  open:
+    "border-blue-500/20 bg-blue-500/10 text-blue-300",
+
+  in_progress:
+    "border-amber-500/20 bg-amber-500/10 text-amber-300",
+
+  closed:
+    "border-zinc-500/20 bg-zinc-500/10 text-zinc-400",
 };
 
-const API_URL = "http://localhost:4000";
+const STATUS_LABELS: Record<TicketStatus, string> = {
+  open: "Open",
+  in_progress: "In Progress",
+  closed: "Closed",
+};
+
+function formatDate(value: any) {
+  if (!value?.toDate) return "Just now";
+
+  return value.toDate().toLocaleString();
+}
 
 export default function Tickets() {
   const { user } = useAuth();
-  const [tab, setTab] = useState<"create" | "history">("create");
-  const [category, setCategory] = useState<TicketCategory | null>(null);
+
+  const [tab, setTab] =
+    useState<"create" | "history">("create");
+
+  const [category, setCategory] =
+    useState<TicketCategory | null>(null);
+
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [donationAmount, setDonationAmount] = useState("");
-  const [reportedUser, setReportedUser] = useState("");
-  const [selectedMember, setSelectedMember] = useState<DiscordMember | null>(null);
-  const [banReason, setBanReason] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [loading, setLoading] = useState(true);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Chat view
-  const [activeTicket, setActiveTicket] = useState<Ticket | null>(null);
-  const [replies, setReplies] = useState<Reply[]>([]);
-  const [repliesLoading, setRepliesLoading] = useState(false);
-  const [replyText, setReplyText] = useState("");
-  const [sendingReply, setSendingReply] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const [imageFile, setImageFile] =
+    useState<File | null>(null);
 
-  // Members
-  const [members, setMembers] = useState<DiscordMember[]>([]);
-  const [membersLoading, setMembersLoading] = useState(false);
-  const [memberSearch, setMemberSearch] = useState("");
-  const [showMemberList, setShowMemberList] = useState(false);
-  const memberListRef = useRef<HTMLDivElement>(null);
+  const [imagePreview, setImagePreview] =
+    useState<string | null>(null);
 
-  // Close member dropdown
+  const [uploadingImage, setUploadingImage] =
+    useState(false);
+
+  const [donationAmount, setDonationAmount] =
+    useState("");
+
+  const [reportedUser, setReportedUser] =
+    useState("");
+
+  const [selectedMember, setSelectedMember] =
+    useState<DiscordMember | null>(null);
+
+  const [banReason, setBanReason] =
+    useState("");
+
+  const [submitting, setSubmitting] =
+    useState(false);
+
+  const [successMsg, setSuccessMsg] =
+    useState<string | null>(null);
+
+  const [tickets, setTickets] =
+    useState<Ticket[]>([]);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const fileInputRef =
+    useRef<HTMLInputElement>(null);
+
+  const [activeTicket, setActiveTicket] =
+    useState<Ticket | null>(null);
+
+  const [replies, setReplies] =
+    useState<Reply[]>([]);
+
+  const [repliesLoading, setRepliesLoading] =
+    useState(false);
+
+  const [replyText, setReplyText] =
+    useState("");
+
+  const [sendingReply, setSendingReply] =
+    useState(false);
+
+  const chatEndRef =
+    useRef<HTMLDivElement>(null);
+
+  const [members, setMembers] =
+    useState<DiscordMember[]>([]);
+
+  const [membersLoading, setMembersLoading] =
+    useState(false);
+
+  const [memberSearch, setMemberSearch] =
+    useState("");
+
+  const [showMemberList, setShowMemberList] =
+    useState(false);
+
+  const memberListRef =
+    useRef<HTMLDivElement>(null);
+
+  /* -----------------------------
+     Close player dropdown
+  ----------------------------- */
+
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (memberListRef.current && !memberListRef.current.contains(e.target as Node)) {
+      if (
+        memberListRef.current &&
+        !memberListRef.current.contains(
+          e.target as Node
+        )
+      ) {
         setShowMemberList(false);
       }
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+
+    document.addEventListener(
+      "mousedown",
+      handler
+    );
+
+    return () =>
+      document.removeEventListener(
+        "mousedown",
+        handler
+      );
   }, []);
 
-  // Ticket list
+  /* -----------------------------
+     Load user tickets
+  ----------------------------- */
+
   useEffect(() => {
     if (!user?.id) {
       setLoading(false);
@@ -145,30 +280,43 @@ export default function Tickets() {
 
     const q = query(
       collection(db, "tickets"),
-      where("discordId", "==", user.id),
+      where(
+        "discordId",
+        "==",
+        String(user.id)
+      ),
       orderBy("createdAt", "desc")
     );
 
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        const list: Ticket[] = snapshot.docs.map((d) => ({
-          id: d.id,
-          ...(d.data() as Omit<Ticket, "id">),
-        }));
+        const list: Ticket[] =
+          snapshot.docs.map((d) => ({
+            id: d.id,
+            ...(d.data() as Omit<Ticket, "id">),
+          }));
+
         setTickets(list);
         setLoading(false);
       },
       (error) => {
-        console.error("Error loading tickets:", error);
+        console.error(
+          "Error loading tickets:",
+          error
+        );
+
         setLoading(false);
       }
     );
 
-    return () => unsubscribe();
+    return unsubscribe;
   }, [user?.id]);
 
-  // Replies for active ticket
+  /* -----------------------------
+     Load replies
+  ----------------------------- */
+
   useEffect(() => {
     if (!activeTicket) {
       setReplies([]);
@@ -176,47 +324,73 @@ export default function Tickets() {
     }
 
     setRepliesLoading(true);
+
     const q = query(
-      collection(db, "tickets", activeTicket.id, "replies"),
+      collection(
+        db,
+        "tickets",
+        activeTicket.id,
+        "replies"
+      ),
       orderBy("createdAt", "asc")
     );
 
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        const list: Reply[] = snapshot.docs.map((d) => ({
-          id: d.id,
-          ...(d.data() as Omit<Reply, "id">),
-        }));
+        const list: Reply[] =
+          snapshot.docs.map((d) => ({
+            id: d.id,
+            ...(d.data() as Omit<Reply, "id">),
+          }));
+
         setReplies(list);
         setRepliesLoading(false);
       },
       (error) => {
-        console.error("Error loading replies:", error);
+        console.error(error);
         setRepliesLoading(false);
       }
     );
 
-    return () => unsubscribe();
+    return unsubscribe;
   }, [activeTicket?.id]);
 
-  // Auto-scroll chat
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    chatEndRef.current?.scrollIntoView({
+      behavior: "smooth",
+    });
   }, [replies, activeTicket]);
 
-  // Members
+  /* -----------------------------
+     Load Discord members
+  ----------------------------- */
+
   useEffect(() => {
     if (category !== "report") return;
+
     setMembersLoading(true);
-    fetch(`${API_URL}/discord/members`, { credentials: "include" })
+
+    fetch(`${API_URL}/discord/members`, {
+      credentials: "include",
+    })
       .then((res) => {
-        if (!res.ok) throw new Error("Failed to fetch members");
+        if (!res.ok)
+          throw new Error(
+            "Failed to fetch members"
+          );
+
         return res.json();
       })
-      .then((data) => setMembers(data.members || []))
-      .catch(() => setMembers([]))
-      .finally(() => setMembersLoading(false));
+      .then((data) => {
+        setMembers(data.members || []);
+      })
+      .catch(() => {
+        setMembers([]);
+      })
+      .finally(() => {
+        setMembersLoading(false);
+      });
   }, [category]);
 
   const resetForm = () => {
@@ -231,31 +405,73 @@ export default function Tickets() {
     setBanReason("");
     setMemberSearch("");
     setShowMemberList(false);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageChange = (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
     const file = e.target.files?.[0];
+
     if (!file) return;
-    if (!file.type.startsWith("image/")) return alert("Please select an image file.");
-    if (file.size > 5 * 1024 * 1024) return alert("Image must be under 5 MB.");
+
+    if (!file.type.startsWith("image/")) {
+      alert("Please select an image file.");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Image must be under 5 MB.");
+      return;
+    }
+
     setImageFile(file);
+
     const reader = new FileReader();
-    reader.onload = () => setImagePreview(reader.result as string);
+
+    reader.onload = () => {
+      setImagePreview(
+        reader.result as string
+      );
+    };
+
     reader.readAsDataURL(file);
   };
 
-  const selectMember = (m: DiscordMember) => {
-    setSelectedMember(m);
-    setReportedUser(`${m.nickname || m.globalName} (@${m.username}) | ${m.id}`);
+  const selectMember = (
+    member: DiscordMember
+  ) => {
+    setSelectedMember(member);
+
+    setReportedUser(
+      `${member.nickname || member.globalName} (@${member.username}) | ${member.id}`
+    );
+
     setMemberSearch("");
     setShowMemberList(false);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (
+    e: React.FormEvent
+  ) => {
     e.preventDefault();
-    if (!user || !category || !subject.trim() || !message.trim()) return;
-    if (category === "report" && !reportedUser) {
+
+    if (
+      !user ||
+      !category ||
+      !subject.trim() ||
+      !message.trim()
+    ) {
+      return;
+    }
+
+    if (
+      category === "report" &&
+      !reportedUser
+    ) {
       alert("Please select a player to report.");
       return;
     }
@@ -264,55 +480,114 @@ export default function Tickets() {
     setSuccessMsg(null);
 
     try {
-      let imageUrl: string | undefined;
+      let imageUrl:
+        | string
+        | undefined;
+
       if (imageFile) {
-        const imageRef = ref(storage, `tickets/${user.id}/${Date.now()}_${imageFile.name}`);
-        await uploadBytes(imageRef, imageFile);
-        imageUrl = await getDownloadURL(imageRef);
+        setUploadingImage(true);
+
+        const formData = new FormData();
+        formData.append("file", imageFile);
+
+        const uploadRes = await api.post("/upload", formData, {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        });
+
+        imageUrl = uploadRes.data?.url;
+        setUploadingImage(false);
       }
 
-      const docRef = await addDoc(collection(db, "tickets"), {
-        category,
-        subject: subject.trim(),
-        message: message.trim(),
-        imageUrl: imageUrl || null,
-        status: "open",
-        createdAt: serverTimestamp(),
-        username: user.username,
-        discordId: String(user.id),
-        ...(category === "donation" && { donationAmount: donationAmount || null }),
-        ...(category === "report" && { reportedUser: reportedUser || null }),
-        ...(category === "ban_appeal" && { banReason: banReason || null }),
-      });
+      const docRef = await addDoc(
+        collection(db, "tickets"),
+        {
+          category,
+          subject: subject.trim(),
+          message: message.trim(),
+          imageUrl: imageUrl || null,
+          status: "open",
+          createdAt: serverTimestamp(),
+          username: user.username,
+          discordId: String(user.id),
 
-      setSuccessMsg(`Ticket created successfully! (ID: ${docRef.id.slice(0, 8)})`);
+          ...(category === "donation" && {
+            donationAmount:
+              donationAmount || null,
+          }),
+
+          ...(category === "report" && {
+            reportedUser:
+              reportedUser || null,
+          }),
+
+          ...(category === "ban_appeal" && {
+            banReason:
+              banReason || null,
+          }),
+        }
+      );
+
+      setSuccessMsg(
+        `Ticket created successfully — #${docRef.id.slice(
+          0,
+          8
+        )}`
+      );
+
       resetForm();
       setTab("history");
-    } catch (err) {
-      console.error(err);
+    } catch (error) {
+      console.error(error);
       alert("Failed to create ticket.");
     } finally {
+      setUploadingImage(false);
       setSubmitting(false);
     }
   };
 
-  const sendReply = async (e: React.FormEvent) => {
+  const sendReply = async (
+    e: React.FormEvent
+  ) => {
     e.preventDefault();
-    if (!user || !activeTicket || !replyText.trim()) return;
-    if (activeTicket.status === "closed") return;
+
+    if (
+      !user ||
+      !activeTicket ||
+      !replyText.trim()
+    ) {
+      return;
+    }
+
+    if (
+      activeTicket.status === "closed"
+    ) {
+      return;
+    }
 
     setSendingReply(true);
+
     try {
-      await addDoc(collection(db, "tickets", activeTicket.id, "replies"), {
-        message: replyText.trim(),
-        authorId: String(user.id),
-        authorName: user.username,
-        authorRole: "user",
-        createdAt: serverTimestamp(),
-      });
+      await addDoc(
+        collection(
+          db,
+          "tickets",
+          activeTicket.id,
+          "replies"
+        ),
+        {
+          message: replyText.trim(),
+          authorId: String(user.id),
+          authorName: user.username,
+          authorRole: "user",
+          createdAt: serverTimestamp(),
+        }
+      );
+
       setReplyText("");
-    } catch (err) {
-      console.error(err);
+    } catch (error) {
+      console.error(error);
       alert("Failed to send message.");
     } finally {
       setSendingReply(false);
@@ -320,499 +595,1209 @@ export default function Tickets() {
   };
 
   const filteredMembers = members
-    .filter((m) => {
-      const q = memberSearch.toLowerCase().trim();
+    .filter((member) => {
+      const q =
+        memberSearch
+          .toLowerCase()
+          .trim();
+
       if (!q) return true;
+
       return (
-        m.username.toLowerCase().includes(q) ||
-        (m.globalName || "").toLowerCase().includes(q) ||
-        (m.nickname || "").toLowerCase().includes(q)
+        member.username
+          .toLowerCase()
+          .includes(q) ||
+        (member.globalName || "")
+          .toLowerCase()
+          .includes(q) ||
+        (member.nickname || "")
+          .toLowerCase()
+          .includes(q)
       );
     })
     .slice(0, 50);
 
+  const activeCategory = category
+    ? CATEGORIES.find(
+        (item) => item.id === category
+      )
+    : null;
+
   if (!user) {
     return (
       <div className="container-nrp py-16">
-        <div className="card p-8 text-center">
-          <p className="text-zinc-400">Please log in with Discord to manage tickets.</p>
+        <div className="card mx-auto max-w-lg p-10 text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-500/10 text-indigo-400">
+            <LockKeyhole className="h-6 w-6" />
+          </div>
+
+          <h1 className="mt-5 text-xl font-semibold text-white">
+            Sign in required
+          </h1>
+
+          <p className="mt-2 text-sm leading-6 text-zinc-500">
+            Sign in with Discord to create and manage
+            your support tickets.
+          </p>
         </div>
       </div>
     );
   }
 
-  // ── CHAT VIEW ──
+  /* =========================================================
+     CHAT VIEW
+  ========================================================= */
+
   if (activeTicket) {
-    const cat = CATEGORIES.find((c) => c.id === activeTicket.category);
+    const cat = CATEGORIES.find(
+      (item) =>
+        item.id === activeTicket.category
+    );
+
+    const Icon = cat?.icon || CircleHelp;
 
     return (
-      <div className="container-nrp py-8 max-w-3xl">
-        {/* Chat header */}
-        <div className="mb-6 flex items-start justify-between gap-4">
-          <div>
-            <button
-              onClick={() => setActiveTicket(null)}
-              className="mb-3 text-sm text-zinc-500 hover:text-zinc-300 transition"
-            >
-              ← Back to history
-            </button>
-            <h1 className="text-xl font-bold text-white">{activeTicket.subject}</h1>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span className="font-mono text-xs text-zinc-600">
-                #{activeTicket.id.slice(0, 8)}
-              </span>
-              <span className={`badge ${STATUS_STYLES[activeTicket.status] || STATUS_STYLES.open}`}>
-                {activeTicket.status?.replace("_", " ")}
-              </span>
-              {cat && (
-                <span className={`badge border ${cat.badge}`}>
-                  {cat.icon} {cat.label}
+      <div className="container-nrp page max-w-6xl">
+        <button
+          onClick={() =>
+            setActiveTicket(null)
+          }
+          className="mb-6 flex items-center gap-2 text-sm text-zinc-500 transition hover:text-white"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to my tickets
+        </button>
+
+        <div className="mb-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-mono text-xs text-zinc-600">
+                  #{activeTicket.id.slice(0, 8)}
                 </span>
-              )}
+
+                <span
+                  className={`badge ${
+                    STATUS_STYLES[
+                      activeTicket.status
+                    ]
+                  }`}
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                  {
+                    STATUS_LABELS[
+                      activeTicket.status
+                    ]
+                  }
+                </span>
+
+                {cat && (
+                  <span
+                    className={`badge ${cat.badge}`}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    {cat.label}
+                  </span>
+                )}
+              </div>
+
+              <h1 className="mt-3 text-2xl font-bold tracking-tight text-white">
+                {activeTicket.subject}
+              </h1>
+
+              <p className="mt-1 text-sm text-zinc-500">
+                Support conversation
+              </p>
             </div>
           </div>
         </div>
 
-        {/* Messages */}
-        <div className="card flex flex-col" style={{ minHeight: "420px", maxHeight: "60vh" }}>
-          <div className="flex-1 overflow-y-auto space-y-4 p-5">
-            {/* Original ticket message */}
-            <div className="flex justify-end">
-              <div className="max-w-[80%] rounded-2xl rounded-br-md bg-indigo-600 px-4 py-3 text-sm text-white">
-                <p className="whitespace-pre-wrap">{activeTicket.message}</p>
-                {activeTicket.imageUrl && (
-                  <img
-                    src={activeTicket.imageUrl}
-                    alt=""
-                    className="mt-2 max-h-40 rounded-lg"
-                  />
-                )}
-                <p className="mt-1.5 text-right text-[10px] text-indigo-200">
-                  {activeTicket.createdAt?.toDate
-                    ? activeTicket.createdAt.toDate().toLocaleString()
-                    : ""}
-                </p>
+        <div className="grid gap-5 lg:grid-cols-[1fr_280px]">
+          {/* CHAT */}
+          <div className="card overflow-hidden">
+            <div
+              className="chat-scroll flex flex-col overflow-y-auto p-5 sm:p-6"
+              style={{
+                minHeight: "480px",
+                maxHeight: "65vh",
+              }}
+            >
+              <div className="mb-6 flex items-center justify-center">
+                <div className="flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/70 px-3 py-1.5 text-[11px] text-zinc-500">
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  Ticket opened on{" "}
+                  {formatDate(
+                    activeTicket.createdAt
+                  )}
+                </div>
               </div>
-            </div>
 
-            {/* Extra fields */}
-            {(activeTicket.donationAmount ||
-              activeTicket.reportedUser ||
-              activeTicket.banReason) && (
-              <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3 text-xs text-zinc-400">
-                {activeTicket.donationAmount && (
-                  <p>Amount: <span className="text-zinc-200">{activeTicket.donationAmount}</span></p>
-                )}
-                {activeTicket.reportedUser && (
-                  <p>Reported: <span className="text-zinc-200">{activeTicket.reportedUser}</span></p>
-                )}
-                {activeTicket.banReason && (
-                  <p>Ban reason: <span className="text-zinc-200">{activeTicket.banReason}</span></p>
-                )}
+              {/* ORIGINAL MESSAGE */}
+              <div className="flex justify-end">
+                <div className="max-w-[85%] rounded-2xl rounded-br-md bg-indigo-600 px-4 py-3 text-sm text-white shadow-lg shadow-indigo-900/10">
+                  <div className="mb-2 flex items-center justify-between gap-6">
+                    <span className="text-xs font-semibold text-indigo-100">
+                      {activeTicket.username}
+                    </span>
+
+                    <span className="text-[10px] text-indigo-200">
+                      {formatDate(
+                        activeTicket.createdAt
+                      )}
+                    </span>
+                  </div>
+
+                  <p className="whitespace-pre-wrap leading-6">
+                    {activeTicket.message}
+                  </p>
+
+                  {activeTicket.imageUrl && (
+                    <img
+                      src={activeTicket.imageUrl}
+                      alt="Ticket attachment"
+                      className="mt-3 max-h-72 rounded-xl border border-white/10 object-contain"
+                    />
+                  )}
+                </div>
               </div>
-            )}
 
-            {repliesLoading && (
-              <p className="text-center text-sm text-zinc-600">Loading conversation...</p>
-            )}
+              {/* EXTRA INFO */}
+              {(activeTicket.donationAmount ||
+                activeTicket.reportedUser ||
+                activeTicket.banReason) && (
+                <div className="my-5 rounded-2xl border border-zinc-800 bg-zinc-900/50 p-4">
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-600">
+                    Ticket information
+                  </p>
 
-            {replies.map((r) => {
-              const isMe = r.authorRole === "user";
-              return (
-                <div key={r.id} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
-                  <div
-                    className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm ${
-                      isMe
-                        ? "rounded-br-md bg-indigo-600 text-white"
-                        : "rounded-bl-md bg-zinc-800 text-zinc-100"
-                    }`}
-                  >
-                    {!isMe && (
-                      <p className="mb-1 text-xs font-medium text-indigo-300">
-                        {r.authorName} · Staff
-                      </p>
+                  <div className="space-y-2 text-sm">
+                    {activeTicket.donationAmount && (
+                      <div className="flex justify-between gap-4">
+                        <span className="text-zinc-500">
+                          Donation amount
+                        </span>
+
+                        <span className="text-zinc-200">
+                          {
+                            activeTicket.donationAmount
+                          }
+                        </span>
+                      </div>
                     )}
-                    <p className="whitespace-pre-wrap">{r.message}</p>
-                    {r.imageUrl && (
-                      <img src={r.imageUrl} alt="" className="mt-2 max-h-40 rounded-lg" />
+
+                    {activeTicket.reportedUser && (
+                      <div>
+                        <span className="text-zinc-500">
+                          Reported player
+                        </span>
+
+                        <p className="mt-1 break-all text-zinc-200">
+                          {
+                            activeTicket.reportedUser
+                          }
+                        </p>
+                      </div>
                     )}
-                    <p
-                      className={`mt-1.5 text-[10px] ${
-                        isMe ? "text-right text-indigo-200" : "text-zinc-500"
-                      }`}
-                    >
-                      {r.createdAt?.toDate ? r.createdAt.toDate().toLocaleString() : ""}
-                    </p>
+
+                    {activeTicket.banReason && (
+                      <div>
+                        <span className="text-zinc-500">
+                          Ban reason
+                        </span>
+
+                        <p className="mt-1 text-zinc-200">
+                          {
+                            activeTicket.banReason
+                          }
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
-              );
-            })}
-            <div ref={chatEndRef} />
+              )}
+
+              {repliesLoading && (
+                <div className="my-6 flex justify-center">
+                  <div className="flex items-center gap-2 text-xs text-zinc-600">
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-zinc-700 border-t-indigo-400" />
+                    Loading conversation...
+                  </div>
+                </div>
+              )}
+
+              {/* REPLIES */}
+              <div className="mt-5 space-y-4">
+                {replies.map((reply) => {
+                  const isMe =
+                    reply.authorRole ===
+                    "user";
+
+                  return (
+                    <div
+                      key={reply.id}
+                      className={`flex ${
+                        isMe
+                          ? "justify-end"
+                          : "justify-start"
+                      }`}
+                    >
+                      <div
+                        className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
+                          isMe
+                            ? "rounded-br-md bg-indigo-600 text-white"
+                            : "rounded-bl-md border border-zinc-800 bg-zinc-900 text-zinc-100"
+                        }`}
+                      >
+                        <div className="mb-2 flex items-center justify-between gap-6">
+                          <span
+                            className={`text-xs font-semibold ${
+                              isMe
+                                ? "text-indigo-100"
+                                : "text-indigo-300"
+                            }`}
+                          >
+                            {reply.authorName}
+                            {!isMe &&
+                              " · Staff"}
+                          </span>
+
+                          <span
+                            className={`text-[10px] ${
+                              isMe
+                                ? "text-indigo-200"
+                                : "text-zinc-600"
+                            }`}
+                          >
+                            {formatDate(
+                              reply.createdAt
+                            )}
+                          </span>
+                        </div>
+
+                        <p className="whitespace-pre-wrap leading-6">
+                          {reply.message}
+                        </p>
+
+                        {reply.imageUrl && (
+                          <img
+                            src={reply.imageUrl}
+                            alt="Attachment"
+                            className="mt-3 max-h-72 rounded-xl"
+                          />
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* REPLY */}
+            {activeTicket.status !==
+            "closed" ? (
+              <form
+                onSubmit={sendReply}
+                className="border-t border-zinc-800 bg-zinc-950/30 p-4"
+              >
+                <div className="flex items-center gap-3">
+                  <input
+                    value={replyText}
+                    onChange={(e) =>
+                      setReplyText(
+                        e.target.value
+                      )
+                    }
+                    placeholder="Write a message..."
+                    className="input"
+                    disabled={sendingReply}
+                  />
+
+                  <button
+                    type="submit"
+                    disabled={
+                      sendingReply ||
+                      !replyText.trim()
+                    }
+                    className="btn-primary shrink-0 px-4"
+                  >
+                    <Send className="h-4 w-4" />
+
+                    <span className="hidden sm:inline">
+                      Send
+                    </span>
+                  </button>
+                </div>
+
+                <p className="mt-2 px-1 text-[11px] text-zinc-600">
+                  Please keep the conversation respectful and
+                  provide any useful information to our staff.
+                </p>
+              </form>
+            ) : (
+              <div className="flex items-center justify-center gap-2 border-t border-zinc-800 px-4 py-4 text-sm text-zinc-500">
+                <LockKeyhole className="h-4 w-4" />
+                This ticket is closed.
+              </div>
+            )}
           </div>
 
-          {/* Reply input */}
-          {activeTicket.status !== "closed" ? (
-            <form
-              onSubmit={sendReply}
-              className="flex gap-2 border-t border-zinc-800 p-4"
-            >
-              <input
-                type="text"
-                value={replyText}
-                onChange={(e) => setReplyText(e.target.value)}
-                placeholder="Type your message..."
-                className="input flex-1"
-                disabled={sendingReply}
-              />
-              <button
-                type="submit"
-                disabled={sendingReply || !replyText.trim()}
-                className="btn-primary px-5"
-              >
-                Send
-              </button>
-            </form>
-          ) : (
-            <div className="border-t border-zinc-800 px-4 py-3 text-center text-sm text-zinc-500">
-              This ticket is closed. You can no longer reply.
+          {/* INFO SIDEBAR */}
+          <aside className="space-y-4">
+            <div className="card p-5">
+              <p className="text-xs font-semibold uppercase tracking-wider text-zinc-600">
+                Ticket details
+              </p>
+
+              <div className="mt-5 space-y-4">
+                <div>
+                  <p className="text-xs text-zinc-600">
+                    Ticket ID
+                  </p>
+
+                  <p className="mt-1 font-mono text-sm text-zinc-300">
+                    #{activeTicket.id.slice(0, 8)}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs text-zinc-600">
+                    Category
+                  </p>
+
+                  <div className="mt-2">
+                    {cat && (
+                      <span
+                        className={`badge ${cat.badge}`}
+                      >
+                        <Icon className="h-3.5 w-3.5" />
+                        {cat.label}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs text-zinc-600">
+                    Status
+                  </p>
+
+                  <div className="mt-2">
+                    <span
+                      className={`badge ${
+                        STATUS_STYLES[
+                          activeTicket.status
+                        ]
+                      }`}
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                      {
+                        STATUS_LABELS[
+                          activeTicket.status
+                        ]
+                      }
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs text-zinc-600">
+                    Created
+                  </p>
+
+                  <p className="mt-1 text-sm text-zinc-300">
+                    {formatDate(
+                      activeTicket.createdAt
+                    )}
+                  </p>
+                </div>
+              </div>
             </div>
-          )}
+
+            <div className="rounded-2xl border border-indigo-500/10 bg-indigo-500/[0.04] p-5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-400">
+                <CircleHelp className="h-4 w-4" />
+              </div>
+
+              <h3 className="mt-4 text-sm font-semibold text-white">
+                Need more help?
+              </h3>
+
+              <p className="mt-2 text-xs leading-5 text-zinc-500">
+                Keep your ticket conversation in one place so our
+                staff can help you faster.
+              </p>
+            </div>
+          </aside>
         </div>
       </div>
     );
   }
 
-  // ── MAIN VIEW ──
+  /* =========================================================
+     MAIN VIEW
+  ========================================================= */
+
   return (
-    <div className="container-nrp py-10">
-      <div className="mb-10">
-        <h1 className="text-3xl font-bold tracking-tight text-white">Support Tickets</h1>
-        <p className="mt-2 text-zinc-400">
-          Logged in as <span className="font-medium text-zinc-200">{user.username}</span>
-        </p>
+    <div className="container-nrp page">
+      {/* HEADER */}
+      <div className="mb-8">
+        <div className="eyebrow">
+          <TicketIcon className="h-3.5 w-3.5" />
+          Support Center
+        </div>
+
+        <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
+              How can we help?
+            </h1>
+
+            <p className="mt-2 max-w-xl text-sm leading-6 text-zinc-500">
+              Create a support request or check the status of your
+              existing tickets.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/50 px-3 py-2">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-500/10 text-xs font-bold text-indigo-400">
+              {user.username
+                ?.charAt(0)
+                .toUpperCase()}
+            </div>
+
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-zinc-600">
+                Signed in as
+              </p>
+
+              <p className="text-xs font-medium text-zinc-300">
+                {user.username}
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Tabs */}
-      <div className="mb-8 flex gap-1 border-b border-zinc-800">
+      {/* TABS */}
+      <div className="mb-8 flex border-b border-zinc-800">
         <button
-          onClick={() => setTab("create")}
-          className={`relative px-5 py-3 text-sm font-medium transition ${
-            tab === "create" ? "text-indigo-400" : "text-zinc-500 hover:text-zinc-300"
+          onClick={() => {
+            setTab("create");
+            setSuccessMsg(null);
+          }}
+          className={`relative flex items-center gap-2 px-4 py-3 text-sm font-semibold transition ${
+            tab === "create"
+              ? "text-white"
+              : "text-zinc-600 hover:text-zinc-300"
           }`}
         >
-          Create Ticket
+          <TicketIcon className="h-4 w-4" />
+          New Ticket
+
           {tab === "create" && (
             <span className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full bg-indigo-500" />
           )}
         </button>
+
         <button
-          onClick={() => setTab("history")}
-          className={`relative px-5 py-3 text-sm font-medium transition ${
-            tab === "history" ? "text-indigo-400" : "text-zinc-500 hover:text-zinc-300"
+          onClick={() => {
+            setTab("history");
+            setSuccessMsg(null);
+          }}
+          className={`relative flex items-center gap-2 px-4 py-3 text-sm font-semibold transition ${
+            tab === "history"
+              ? "text-white"
+              : "text-zinc-600 hover:text-zinc-300"
           }`}
         >
-          Ticket History
-          <span className="ml-2 rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
+          <MessageSquare className="h-4 w-4" />
+
+          My Tickets
+
+          <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-400">
             {tickets.length}
           </span>
+
           {tab === "history" && (
             <span className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full bg-indigo-500" />
           )}
         </button>
       </div>
 
+      {/* SUCCESS */}
       {successMsg && (
-        <div className="mb-6 flex items-center gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
-          <span>✓</span> {successMsg}
+        <div className="mb-6 flex items-start gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.06] p-4">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400">
+            <CheckCircle2 className="h-4 w-4" />
+          </div>
+
+          <div>
+            <p className="text-sm font-semibold text-emerald-300">
+              Ticket created
+            </p>
+
+            <p className="mt-0.5 text-xs text-emerald-400/70">
+              {successMsg}
+            </p>
+          </div>
         </div>
       )}
 
-      {/* CREATE */}
+      {/* =====================================================
+          CREATE
+      ===================================================== */}
+
       {tab === "create" && (
-        <div className="max-w-xl">
+        <>
           {!category ? (
             <div>
-              <h2 className="mb-5 text-lg font-semibold text-zinc-200">Select a category</h2>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {CATEGORIES.map((cat) => (
-                  <button
-                    key={cat.id}
-                    onClick={() => setCategory(cat.id)}
-                    className={`group rounded-2xl border p-5 text-left transition-all duration-200 ${cat.color}`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <span className="text-2xl">{cat.icon}</span>
-                      <div>
-                        <div className="font-semibold text-white">{cat.label}</div>
-                        <div className="mt-1 text-sm opacity-70 leading-snug">{cat.description}</div>
+              <div className="mb-5">
+                <h2 className="text-lg font-semibold text-white">
+                  What do you need help with?
+                </h2>
+
+                <p className="mt-1 text-sm text-zinc-600">
+                  Select the category that best matches your request.
+                </p>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                {CATEGORIES.map((item) => {
+                  const Icon = item.icon;
+
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() =>
+                        setCategory(item.id)
+                      }
+                      className={`group relative overflow-hidden rounded-2xl border p-6 text-left transition-all duration-200 ${item.color}`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div
+                          className={`flex h-11 w-11 items-center justify-center rounded-xl ${item.iconStyle}`}
+                        >
+                          <Icon className="h-5 w-5" />
+                        </div>
+
+                        <ChevronRight className="h-4 w-4 text-zinc-700 transition group-hover:translate-x-1 group-hover:text-zinc-400" />
                       </div>
-                    </div>
-                  </button>
-                ))}
+
+                      <h3 className="mt-5 font-semibold text-white">
+                        {item.label}
+                      </h3>
+
+                      <p className="mt-2 max-w-sm text-sm leading-6 text-zinc-500">
+                        {item.description}
+                      </p>
+
+                      <p className="mt-5 text-xs font-semibold text-zinc-600 transition group-hover:text-zinc-400">
+                        Continue →
+                      </p>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           ) : (
-            <form onSubmit={handleSubmit} className="card space-y-5 p-6">
-              <div className="flex items-center justify-between">
-                <span className={`badge border ${CATEGORIES.find((c) => c.id === category)?.badge}`}>
-                  {CATEGORIES.find((c) => c.id === category)?.icon}{" "}
-                  {CATEGORIES.find((c) => c.id === category)?.label}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setCategory(null)}
-                  className="text-sm text-zinc-500 hover:text-zinc-300 transition"
-                >
-                  ← Change
-                </button>
-              </div>
+            <div className="grid gap-6 lg:grid-cols-[1fr_280px]">
+              {/* FORM */}
+              <form
+                onSubmit={handleSubmit}
+                className="card overflow-hidden"
+              >
+                <div className="border-b border-zinc-800 p-6">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      {activeCategory && (
+                        <>
+                          <div
+                            className={`flex h-10 w-10 items-center justify-center rounded-xl ${activeCategory.iconStyle}`}
+                          >
+                            <activeCategory.icon className="h-5 w-5" />
+                          </div>
 
-              {category === "report" && (
-                <div ref={memberListRef}>
-                  <label className="label">
-                    Reported player <span className="text-red-400">*</span>
-                  </label>
-                  {membersLoading ? (
-                    <div className="flex items-center gap-2 py-2 text-sm text-zinc-500">
-                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-indigo-400" />
-                      Loading members...
-                    </div>
-                  ) : selectedMember ? (
-                    <div className="flex items-center gap-3 rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2.5">
-                      {selectedMember.avatar ? (
-                        <img src={selectedMember.avatar} alt="" className="h-8 w-8 rounded-full" />
-                      ) : (
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-800 text-xs font-medium">
-                          {(selectedMember.nickname || selectedMember.globalName)?.[0]}
-                        </div>
+                          <div>
+                            <p className="text-sm font-semibold text-white">
+                              {activeCategory.label}
+                            </p>
+
+                            <p className="text-xs text-zinc-600">
+                              Create a new request
+                            </p>
+                          </div>
+                        </>
                       )}
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium text-white">
-                          {selectedMember.nickname || selectedMember.globalName}
-                        </div>
-                        <div className="truncate text-xs text-zinc-500">
-                          @{selectedMember.username}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedMember(null);
-                          setReportedUser("");
-                        }}
-                        className="rounded-lg px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
-                      >
-                        Change
-                      </button>
                     </div>
-                  ) : (
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={memberSearch}
-                        onChange={(e) => {
-                          setMemberSearch(e.target.value);
-                          setShowMemberList(true);
-                        }}
-                        onFocus={() => setShowMemberList(true)}
-                        placeholder="Search player by name..."
-                        className="input"
-                        autoComplete="off"
-                      />
-                      {showMemberList && (
-                        <div className="absolute z-20 mt-1.5 max-h-64 w-full overflow-y-auto rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl shadow-black/50">
-                          {filteredMembers.length === 0 ? (
-                            <div className="px-4 py-6 text-center text-sm text-zinc-500">
-                              No members found
-                            </div>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCategory(null)
+                      }
+                      className="btn-ghost px-3 py-2 text-xs"
+                    >
+                      <ArrowLeft className="h-3.5 w-3.5" />
+                      Change
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-6 p-6">
+                  {/* REPORT PLAYER */}
+                  {category === "report" && (
+                    <div
+                      ref={memberListRef}
+                    >
+                      <label className="label">
+                        Reported player{" "}
+                        <span className="text-red-400">
+                          *
+                        </span>
+                      </label>
+
+                      {membersLoading ? (
+                        <div className="flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3 text-sm text-zinc-600">
+                          <span className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-700 border-t-indigo-400" />
+                          Loading players...
+                        </div>
+                      ) : selectedMember ? (
+                        <div className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900/50 p-3">
+                          {selectedMember.avatar ? (
+                            <img
+                              src={
+                                selectedMember.avatar
+                              }
+                              alt=""
+                              className="h-9 w-9 rounded-full"
+                            />
                           ) : (
-                            filteredMembers.map((m) => (
-                              <button
-                                key={m.id}
-                                type="button"
-                                onClick={() => selectMember(m)}
-                                className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-zinc-800"
-                              >
-                                {m.avatar ? (
-                                  <img src={m.avatar} alt="" className="h-8 w-8 shrink-0 rounded-full" />
-                                ) : (
-                                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-xs font-medium">
-                                    {(m.nickname || m.globalName)?.[0]}
-                                  </div>
-                                )}
-                                <div className="min-w-0">
-                                  <div className="truncate text-sm font-medium text-zinc-100">
-                                    {m.nickname || m.globalName}
-                                  </div>
-                                  <div className="truncate text-xs text-zinc-500">
-                                    @{m.username}
-                                  </div>
+                            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-500/10 text-xs font-bold text-indigo-400">
+                              {(
+                                selectedMember.nickname ||
+                                selectedMember.globalName ||
+                                selectedMember.username
+                              )
+                                .charAt(0)
+                                .toUpperCase()}
+                            </div>
+                          )}
+
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-white">
+                              {selectedMember.nickname ||
+                                selectedMember.globalName}
+                            </p>
+
+                            <p className="truncate text-xs text-zinc-600">
+                              @{selectedMember.username}
+                            </p>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedMember(
+                                null
+                              );
+                              setReportedUser(
+                                ""
+                              );
+                            }}
+                            className="btn-ghost px-2 py-1 text-xs"
+                          >
+                            Change
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="relative">
+                          <div className="relative">
+                            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-600" />
+
+                            <input
+                              value={
+                                memberSearch
+                              }
+                              onChange={(e) => {
+                                setMemberSearch(
+                                  e.target.value
+                                );
+                                setShowMemberList(
+                                  true
+                                );
+                              }}
+                              onFocus={() =>
+                                setShowMemberList(
+                                  true
+                                )
+                              }
+                              placeholder="Search player by name..."
+                              className="input pl-10"
+                              autoComplete="off"
+                            />
+                          </div>
+
+                          {showMemberList && (
+                            <div className="absolute z-30 mt-2 max-h-64 w-full overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-950 p-1.5 shadow-2xl shadow-black/60">
+                              {filteredMembers.length ===
+                              0 ? (
+                                <div className="px-4 py-8 text-center text-sm text-zinc-600">
+                                  No players found
                                 </div>
-                              </button>
-                            ))
+                              ) : (
+                                filteredMembers.map(
+                                  (member) => (
+                                    <button
+                                      key={
+                                        member.id
+                                      }
+                                      type="button"
+                                      onClick={() =>
+                                        selectMember(
+                                          member
+                                        )
+                                      }
+                                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-white/[0.04]"
+                                    >
+                                      {member.avatar ? (
+                                        <img
+                                          src={
+                                            member.avatar
+                                          }
+                                          alt=""
+                                          className="h-8 w-8 rounded-full"
+                                        />
+                                      ) : (
+                                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-800 text-xs font-semibold text-zinc-400">
+                                          {(
+                                            member.nickname ||
+                                            member.globalName ||
+                                            member.username
+                                          )
+                                            .charAt(
+                                              0
+                                            )
+                                            .toUpperCase()}
+                                        </div>
+                                      )}
+
+                                      <div className="min-w-0">
+                                        <p className="truncate text-sm font-medium text-zinc-200">
+                                          {member.nickname ||
+                                            member.globalName}
+                                        </p>
+
+                                        <p className="truncate text-xs text-zinc-600">
+                                          @
+                                          {
+                                            member.username
+                                          }
+                                        </p>
+                                      </div>
+                                    </button>
+                                  )
+                                )
+                              )}
+                            </div>
                           )}
                         </div>
                       )}
                     </div>
                   )}
-                </div>
-              )}
 
-              {category === "ban_appeal" && (
-                <div>
-                  <label className="label">Ban reason (if known)</label>
-                  <input
-                    type="text"
-                    value={banReason}
-                    onChange={(e) => setBanReason(e.target.value)}
-                    placeholder="What were you banned for?"
-                    className="input"
-                  />
-                </div>
-              )}
+                  {/* BAN REASON */}
+                  {category ===
+                    "ban_appeal" && (
+                    <div>
+                      <label className="label">
+                        Ban reason
+                        <span className="ml-1 text-zinc-600">
+                          (if known)
+                        </span>
+                      </label>
 
-              <div>
-                <label className="label">
-                  Subject <span className="text-red-400">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                  placeholder="Short summary of your issue"
-                  maxLength={100}
-                  className="input"
-                />
-              </div>
-
-              <div>
-                <label className="label">
-                  Message <span className="text-red-400">*</span>
-                </label>
-                <textarea
-                  required
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Describe your issue in detail..."
-                  rows={5}
-                  className="input resize-none"
-                />
-              </div>
-
-              {/* Image */}
-              <div>
-                <label className="label">Attach a picture (optional)</label>
-                {!imagePreview ? (
-                  <label className="group flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-zinc-700 bg-zinc-900/50 px-6 py-8 transition hover:border-indigo-500/50 hover:bg-zinc-900">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-800 text-zinc-400 group-hover:bg-indigo-500/20 group-hover:text-indigo-400 transition">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                      </svg>
+                      <input
+                        type="text"
+                        value={banReason}
+                        onChange={(e) =>
+                          setBanReason(
+                            e.target.value
+                          )
+                        }
+                        placeholder="What were you banned for?"
+                        className="input"
+                      />
                     </div>
-                    <div className="text-center">
-                      <span className="text-sm font-medium text-zinc-300 group-hover:text-white">
-                        Click to upload
+                  )}
+
+                 
+
+                  {/* SUBJECT */}
+                  <div>
+                    <label className="label">
+                      Subject{" "}
+                      <span className="text-red-400">
+                        *
                       </span>
-                      <p className="mt-0.5 text-xs text-zinc-500">PNG, JPG up to 5 MB</p>
-                    </div>
+                    </label>
+
                     <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handleImageChange}
-                      className="hidden"
+                      type="text"
+                      required
+                      value={subject}
+                      onChange={(e) =>
+                        setSubject(
+                          e.target.value
+                        )
+                      }
+                      placeholder="Briefly describe your issue"
+                      maxLength={100}
+                      className="input"
                     />
-                  </label>
-                ) : (
-                  <div className="relative inline-block">
-                    <img
-                      src={imagePreview}
-                      alt="Preview"
-                      className="h-36 w-auto rounded-xl border border-zinc-700 object-cover shadow-lg"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setImageFile(null);
-                        setImagePreview(null);
-                        if (fileInputRef.current) fileInputRef.current.value = "";
-                      }}
-                      className="absolute -right-2 -top-2 flex h-7 w-7 items-center justify-center rounded-full border border-zinc-600 bg-zinc-800 text-zinc-300 shadow-md transition hover:border-red-500 hover:bg-red-500 hover:text-white"
-                    >
-                      ✕
-                    </button>
-                    <p className="mt-2 max-w-[200px] truncate text-xs text-zinc-500">
-                      {imageFile?.name}
+
+                    <p className="mt-2 text-right text-[11px] text-zinc-700">
+                      {subject.length}/100
                     </p>
                   </div>
-                )}
-              </div>
 
-              <div className="flex gap-3 border-t border-zinc-800 pt-5">
-                <button type="submit" disabled={submitting} className="btn-primary">
-                  {submitting ? "Submitting..." : "Submit Ticket"}
-                </button>
-                <button type="button" onClick={resetForm} className="btn-secondary">
-                  Cancel
-                </button>
-              </div>
-            </form>
+                  {/* MESSAGE */}
+                  <div>
+                    <label className="label">
+                      Message{" "}
+                      <span className="text-red-400">
+                        *
+                      </span>
+                    </label>
+
+                    <textarea
+                      required
+                      value={message}
+                      onChange={(e) =>
+                        setMessage(
+                          e.target.value
+                        )
+                      }
+                      placeholder="Explain your situation and provide any useful details..."
+                      rows={7}
+                      className="input resize-none"
+                    />
+                  </div>
+
+                  {/* IMAGE */}
+                  <div>
+                    <label className="label">
+                      Evidence or attachment
+                      <span className="ml-1 text-zinc-600">
+                        (optional)
+                      </span>
+                    </label>
+
+                    {!imagePreview ? (
+                      <label className="group flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-zinc-800 bg-zinc-900/30 px-6 py-9 transition hover:border-indigo-500/40 hover:bg-indigo-500/[0.03]">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-zinc-800/70 text-zinc-500 transition group-hover:bg-indigo-500/10 group-hover:text-indigo-400">
+                          <ImagePlus className="h-5 w-5" />
+                        </div>
+
+                        <p className="mt-4 text-sm font-medium text-zinc-300">
+                          Upload an image
+                        </p>
+
+                        <p className="mt-1 text-xs text-zinc-600">
+                          PNG, JPG or WEBP · Max 5 MB
+                        </p>
+
+                        <input
+                          ref={
+                            fileInputRef
+                          }
+                          type="file"
+                          accept="image/*"
+                          onChange={
+                            handleImageChange
+                          }
+                          className="hidden"
+                        />
+                      </label>
+                    ) : (
+                      <div className="relative overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/50 p-3">
+                        <img
+                          src={imagePreview}
+                          alt="Preview"
+                          className="max-h-72 w-full rounded-xl object-contain"
+                        />
+
+                        <div className="mt-3 flex items-center justify-between gap-3">
+                          <p className="min-w-0 truncate text-xs text-zinc-500">
+                            {imageFile?.name}
+                          </p>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setImageFile(
+                                null
+                              );
+                              setImagePreview(
+                                null
+                              );
+
+                              if (
+                                fileInputRef.current
+                              ) {
+                                fileInputRef.current.value =
+                                  "";
+                              }
+                            }}
+                            className="btn-danger shrink-0 px-3 py-2 text-xs"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* FORM FOOTER */}
+                <div className="flex flex-col-reverse gap-3 border-t border-zinc-800 bg-zinc-950/30 p-5 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={resetForm}
+                    className="btn-secondary"
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={submitting || uploadingImage}
+                    className="btn-primary"
+                  >
+                    {submitting || uploadingImage ? (
+                      <>
+                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                        {uploadingImage ? "Uploading image..." : "Creating ticket..."}
+                      </>
+                    ) : (
+                      <>
+                        Create Ticket
+                        <ArrowRight className="h-4 w-4" />
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+
+              {/* SIDE INFO */}
+              <aside className="space-y-4">
+                <div className="card p-5">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-zinc-600">
+                    Before submitting
+                  </p>
+
+                  <div className="mt-5 space-y-4">
+                    <div className="flex gap-3">
+                      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+                        <MessageSquare className="h-3.5 w-3.5" />
+                      </div>
+
+                      <div>
+                        <p className="text-sm font-medium text-zinc-300">
+                          Be specific
+                        </p>
+
+                        <p className="mt-1 text-xs leading-5 text-zinc-600">
+                          Give staff enough information to understand
+                          your situation.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-3">
+                      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+                        <ImagePlus className="h-3.5 w-3.5" />
+                      </div>
+
+                      <div>
+                        <p className="text-sm font-medium text-zinc-300">
+                          Add evidence
+                        </p>
+
+                        <p className="mt-1 text-xs leading-5 text-zinc-600">
+                          Screenshots can help staff process reports
+                          faster.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-3">
+                      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                      </div>
+
+                      <div>
+                        <p className="text-sm font-medium text-zinc-300">
+                          One issue per ticket
+                        </p>
+
+                        <p className="mt-1 text-xs leading-5 text-zinc-600">
+                          This keeps support organized and easier to
+                          resolve.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-indigo-500/10 bg-indigo-500/[0.035] p-5">
+                  <p className="text-xs font-semibold text-indigo-300">
+                    Support response
+                  </p>
+
+                  <p className="mt-2 text-xs leading-5 text-zinc-600">
+                    Once submitted, you can follow the conversation
+                    from your ticket history.
+                  </p>
+                </div>
+              </aside>
+            </div>
           )}
-        </div>
+        </>
       )}
 
-      {/* HISTORY */}
+      {/* =====================================================
+          HISTORY
+      ===================================================== */}
+
       {tab === "history" && (
-        <div className="space-y-3">
+        <div>
+          <div className="mb-5 flex flex-col gap-1">
+            <h2 className="text-lg font-semibold text-white">
+              My tickets
+            </h2>
+
+            <p className="text-sm text-zinc-600">
+              View and continue your support conversations.
+            </p>
+          </div>
+
           {loading ? (
-            <div className="card p-10 text-center text-zinc-500">Loading tickets...</div>
+            <div className="card flex min-h-48 items-center justify-center">
+              <div className="flex items-center gap-3 text-sm text-zinc-600">
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-700 border-t-indigo-400" />
+                Loading your tickets...
+              </div>
+            </div>
           ) : tickets.length === 0 ? (
-            <div className="card border-dashed p-12 text-center">
-              <p className="text-zinc-500">No tickets yet.</p>
-              <button onClick={() => setTab("create")} className="btn-primary mt-4">
-                Create your first ticket
+            <div className="card flex min-h-72 flex-col items-center justify-center p-8 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-500/10 text-indigo-400">
+                <TicketIcon className="h-6 w-6" />
+              </div>
+
+              <h3 className="mt-5 font-semibold text-white">
+                No tickets yet
+              </h3>
+
+              <p className="mt-2 max-w-sm text-sm leading-6 text-zinc-600">
+                You haven't created a support ticket yet. If you need
+                help, we're ready.
+              </p>
+
+              <button
+                onClick={() =>
+                  setTab("create")
+                }
+                className="btn-primary mt-6"
+              >
+                Create a ticket
+                <ArrowRight className="h-4 w-4" />
               </button>
             </div>
           ) : (
-            tickets.map((ticket) => {
-              const cat = CATEGORIES.find((c) => c.id === ticket.category);
-              return (
-                <button
-                  key={ticket.id}
-                  onClick={() => setActiveTicket(ticket)}
-                  className="card w-full p-5 text-left transition hover:border-zinc-600 hover:bg-zinc-900/80"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-mono text-xs text-zinc-600">
-                          #{ticket.id.slice(0, 8)}
-                        </span>
-                        <span className={`badge ${STATUS_STYLES[ticket.status] || STATUS_STYLES.open}`}>
-                          {ticket.status?.replace("_", " ") || "open"}
-                        </span>
-                        {cat && (
-                          <span className={`badge border ${cat.badge}`}>
-                            {cat.icon} {cat.label}
+            <div className="space-y-3">
+              {tickets.map((ticket) => {
+                const cat =
+                  CATEGORIES.find(
+                    (item) =>
+                      item.id ===
+                      ticket.category
+                  );
+
+                const Icon =
+                  cat?.icon || CircleHelp;
+
+                return (
+                  <button
+                    key={ticket.id}
+                    type="button"
+                    onClick={() =>
+                      setActiveTicket(ticket)
+                    }
+                    className="card-hover group w-full p-5 text-left"
+                  >
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-mono text-[11px] text-zinc-700">
+                            #{ticket.id.slice(0, 8)}
                           </span>
-                        )}
+
+                          <span
+                            className={`badge ${
+                              STATUS_STYLES[
+                                ticket.status
+                              ]
+                            }`}
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full bg-current" />
+
+                            {
+                              STATUS_LABELS[
+                                ticket.status
+                              ]
+                            }
+                          </span>
+
+                          {cat && (
+                            <span
+                              className={`badge ${cat.badge}`}
+                            >
+                              <Icon className="h-3.5 w-3.5" />
+                              {cat.label}
+                            </span>
+                          )}
+                        </div>
+
+                        <h3 className="mt-3 truncate font-semibold text-white">
+                          {ticket.subject}
+                        </h3>
+
+                        <p className="mt-2 line-clamp-2 max-w-3xl text-sm leading-6 text-zinc-500">
+                          {ticket.message}
+                        </p>
                       </div>
-                      <h3 className="font-semibold text-white">{ticket.subject}</h3>
+
+                      <div className="flex shrink-0 items-center justify-between gap-4 sm:flex-col sm:items-end">
+                        <time className="text-[11px] text-zinc-700">
+                          {formatDate(
+                            ticket.createdAt
+                          )}
+                        </time>
+
+                        <span className="flex items-center gap-1 text-xs font-medium text-indigo-400 opacity-70 transition group-hover:opacity-100">
+                          View ticket
+                          <ChevronRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" />
+                        </span>
+                      </div>
                     </div>
-                    <time className="text-xs text-zinc-600">
-                      {ticket.createdAt?.toDate
-                        ? ticket.createdAt.toDate().toLocaleString()
-                        : "Just now"}
-                    </time>
-                  </div>
-                  <p className="mt-2 line-clamp-2 text-sm text-zinc-400">
-                    {ticket.message}
-                  </p>
-                  <p className="mt-3 text-xs text-indigo-400">Open conversation →</p>
-                </button>
-              );
-            })
+                  </button>
+                );
+              })}
+            </div>
           )}
         </div>
       )}
